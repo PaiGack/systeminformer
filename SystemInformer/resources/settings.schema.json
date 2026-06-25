@@ -1557,6 +1557,11 @@
         }
       ]
     },
+    "IconTrayUnionMetrics": {
+      "description": "Bitmask selecting which curves are combined into the single 'Tray union history' tray icon.\n\nBits: 1=CPU, 2=I/O, 4=Commit, 8=Physical. When 0 the union icon is hidden.",
+      "type": "string",
+      "pattern": "^(0x[0-9A-Fa-f]+|[0-9]+)$"
+    },
     "InformationWindowPosition": {
       "description": "Integer pair encoded as 'x,y' (decimal).\n\nSetting: Stores the position of the system information window.",
       "anyOf": [

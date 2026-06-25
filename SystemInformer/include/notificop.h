@@ -233,6 +233,24 @@ VOID PhNfpCommitHistoryIconUpdateCallback(
     );
 
 /**
+ * Update callback for the union history notification icon.
+ *
+ * \param Icon The icon.
+ * \param NewIconOrBitmap The new icon or bitmap.
+ * \param Flags The update flags.
+ * \param NewText The new tooltip text.
+ * \param Context The user-defined context.
+ */
+_Function_class_(PH_NF_ICON_UPDATE_CALLBACK)
+VOID PhNfpUnionHistoryIconUpdateCallback(
+    _In_ PPH_NF_ICON Icon,
+    _Out_ PVOID *NewIconOrBitmap,
+    _Out_ PULONG Flags,
+    _Out_ PPH_STRING *NewText,
+    _In_opt_ PVOID Context
+    );
+
+/**
  * Update callback for the physical history notification icon.
  *
  * \param Icon The icon.

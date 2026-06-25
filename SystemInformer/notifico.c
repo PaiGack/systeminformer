@@ -225,7 +225,12 @@ VOID PhNfLoadGuids(
             GUID guid;
 
             if (remaining.Length == 0)
+            {
+                // No persisted GUID for this slot (e.g. a newly added icon type);
+                // generate a fresh one so each icon gets a unique GUID.
+                PhGenerateGuid(&PhNfpTrayIconItemGuids[i]);
                 continue;
+            }
 
             PhSplitStringRefAtChar(&remaining, L'|', &guidPart, &remaining);
 
@@ -367,6 +372,7 @@ VOID PhNfLoadStage2(
     PhNfRegisterIcon(NULL, PH_TRAY_ICON_ID_IO_TEXT, PhNfpTrayIconItemGuids[PH_TRAY_ICON_GUID_IO_TEXT], NULL, L"IO usage (text)", 0, PhNfpIoUsageTextIconUpdateCallback, NULL);
     PhNfRegisterIcon(NULL, PH_TRAY_ICON_ID_COMMIT_TEXT, PhNfpTrayIconItemGuids[PH_TRAY_ICON_GUID_COMMIT_TEXT], NULL, L"Commit usage (text)", 0, PhNfpCommitTextIconUpdateCallback, NULL);
     PhNfRegisterIcon(NULL, PH_TRAY_ICON_ID_PHYSICAL_TEXT, PhNfpTrayIconItemGuids[PH_TRAY_ICON_GUID_PHYSICAL_TEXT], NULL, L"Physical usage (text)", 0, PhNfpPhysicalUsageTextIconUpdateCallback, NULL);
+    PhNfRegisterIcon(NULL, PH_TRAY_ICON_ID_UNION_HISTORY, PhNfpTrayIconItemGuids[PH_TRAY_ICON_GUID_UNION_HISTORY], NULL, L"Tray &union history", 0, PhNfpUnionHistoryIconUpdateCallback, NULL);
     PhNfRegisterIcon(NULL, PH_TRAY_ICON_ID_PLAIN_ICON, PhNfpTrayIconItemGuids[PH_TRAY_ICON_GUID_PLAIN_ICON], NULL, L"System Informer icon (static)", 0, PhNfpPlainIconUpdateCallback, NULL);
 
     if (PhPluginsEnabled)
@@ -2031,6 +2037,227 @@ VOID PhNfpPhysicalHistoryIconUpdateCallback(
     *NewText = PhFormat(format, 5, 0);
 
     _freea(lineData1);
+}
+
+_Function_class_(PH_NF_ICON_UPDATE_CALLBACK)
+VOID PhNfpUnionHistoryIconUpdateCallback(
+    _In_ PPH_NF_ICON Icon,
+    _Out_ PVOID *NewIconOrBitmap,
+    _Out_ PULONG Flags,
+    _Out_ PPH_STRING *NewText,
+    _In_opt_ PVOID Context
+    )
+{
+    *NewIconOrBitmap = NULL;
+    *Flags = 0;
+    *NewText = NULL;
+
+    ULONG metricsMask = (ULONG)PhGetIntegerSetting(SETTING_ICON_TRAY_UNION_METRICS);
+
+    // Build the ordered list of selected metrics (top-to-bottom: CPU, I/O, Commit, Physical).
+    ULONG selected[4];
+    ULONG selectedCount = 0;
+
+    if (metricsMask & PH_TRAY_UNION_METRIC_CPU)
+        selected[selectedCount++] = 0;
+    if (metricsMask & PH_TRAY_UNION_METRIC_IO)
+        selected[selectedCount++] = 1;
+    if (metricsMask & PH_TRAY_UNION_METRIC_COMMIT)
+        selected[selectedCount++] = 2;
+    if (metricsMask & PH_TRAY_UNION_METRIC_PHYSICAL)
+        selected[selectedCount++] = 3;
+
+    if (selectedCount == 0)
+    {
+        // No metrics selected; do not draw anything.
+        return;
+    }
+
+    HBITMAP bitmap;
+    PVOID bits;
+    HDC hdc;
+    HBITMAP oldBitmap;
+    ULONG width;
+    ULONG height;
+
+    Icon->Pointers->BeginBitmap(&width, &height, &bitmap, &bits, &hdc, &oldBitmap);
+
+    ULONG maxDataCount = width / 2 + 1;
+    ULONG bandHeight = height / selectedCount;
+    if (bandHeight < 2)
+        bandHeight = 2;
+
+    PFLOAT lineData1 = _malloca(maxDataCount * sizeof(FLOAT));
+    PFLOAT lineData2 = _malloca(maxDataCount * sizeof(FLOAT));
+
+    if (!(lineData1 && lineData2))
+    {
+        _freea(lineData2);
+        _freea(lineData1);
+        return;
+    }
+
+    PH_GRAPH_DRAW_INFO drawInfo;
+    memset(&drawInfo, 0, sizeof(PH_GRAPH_DRAW_INFO));
+    drawInfo.Width = width;
+    drawInfo.Height = bandHeight;
+    drawInfo.Step = 2;
+    drawInfo.BackColor = RGB(0x00, 0x00, 0x00);
+
+    // The DIB is bottom-up (positive biHeight), so bits[0] is the bottom row.
+    // For band s (screen top-to-bottom index), the memory start row is
+    // (height - (s+1)*bandHeight). Each PhDrawGraphDirect call clears only its
+    // own band (width*bandHeight pixels), so bands do not interfere.
+    RGBQUAD* bitsQuad = (RGBQUAD*)bits;
+
+    for (ULONG s = 0; s < selectedCount; s++)
+    {
+        ULONG metric = selected[s];
+        ULONG lineDataCount = 0;
+        ULONG drawFlags = 0;
+        COLORREF color1 = 0;
+        COLORREF color2 = 0;
+        COLORREF backColor1 = 0;
+        COLORREF backColor2 = 0;
+
+        switch (metric)
+        {
+        case 0: // CPU (kernel/user, dual line; values are already 0..1)
+            {
+                drawFlags = PH_GRAPH_USE_LINE_2;
+                color1 = PhCsColorCpuKernel;
+                color2 = PhCsColorCpuUser;
+                backColor1 = PhHalveColorBrightness(PhCsColorCpuKernel);
+                backColor2 = PhHalveColorBrightness(PhCsColorCpuUser);
+                lineDataCount = min(maxDataCount, PhCpuKernelHistory.Count);
+                PhCopyCircularBuffer_FLOAT(&PhCpuKernelHistory, lineData1, lineDataCount);
+                PhCopyCircularBuffer_FLOAT(&PhCpuUserHistory, lineData2, lineDataCount);
+            }
+            break;
+        case 1: // I/O (read+other / write, dual line, normalized to peak)
+            {
+                drawFlags = PH_GRAPH_USE_LINE_2;
+                color1 = PhCsColorIoReadOther;
+                color2 = PhCsColorIoWrite;
+                backColor1 = PhHalveColorBrightness(PhCsColorIoReadOther);
+                backColor2 = PhHalveColorBrightness(PhCsColorIoWrite);
+                lineDataCount = min(maxDataCount, PhIoReadHistory.Count);
+                FLOAT max = 1024 * 1024; // minimum scaling of 1 MB.
+                for (ULONG i = 0; i < lineDataCount; i++)
+                {
+                    lineData1[i] =
+                        (FLOAT)PhGetItemCircularBuffer_ULONG64(&PhIoReadHistory, i) +
+                        (FLOAT)PhGetItemCircularBuffer_ULONG64(&PhIoOtherHistory, i);
+                    lineData2[i] =
+                        (FLOAT)PhGetItemCircularBuffer_ULONG64(&PhIoWriteHistory, i);
+                    if (max < lineData1[i] + lineData2[i])
+                        max = lineData1[i] + lineData2[i];
+                }
+                PhDivideSinglesBySingle(lineData1, max, lineDataCount);
+                PhDivideSinglesBySingle(lineData2, max, lineDataCount);
+            }
+            break;
+        case 2: // Commit (single line, fraction of commit limit)
+            {
+                drawFlags = 0;
+                color1 = PhCsColorPrivate;
+                backColor1 = PhHalveColorBrightness(PhCsColorPrivate);
+                lineDataCount = min(maxDataCount, PhCommitHistory.Count);
+                for (ULONG i = 0; i < lineDataCount; i++)
+                    lineData1[i] = (FLOAT)PhGetItemCircularBuffer_ULONG(&PhCommitHistory, i);
+                PhDivideSinglesBySingle(lineData1, (FLOAT)PhPerfInformation.CommitLimit, lineDataCount);
+            }
+            break;
+        case 3: // Physical (single line, fraction of physical pages)
+            {
+                drawFlags = 0;
+                color1 = PhCsColorPhysical;
+                backColor1 = PhHalveColorBrightness(PhCsColorPhysical);
+                lineDataCount = min(maxDataCount, PhPhysicalHistory.Count);
+                for (ULONG i = 0; i < lineDataCount; i++)
+                    lineData1[i] = (FLOAT)PhGetItemCircularBuffer_ULONG(&PhPhysicalHistory, i);
+                PhDivideSinglesBySingle(lineData1, (FLOAT)PhSystemBasicInformation.NumberOfPhysicalPages, lineDataCount);
+            }
+            break;
+        }
+
+        drawInfo.Flags = drawFlags;
+        drawInfo.LineDataCount = lineDataCount;
+        drawInfo.LineData1 = lineData1;
+        drawInfo.LineData2 = (drawFlags & PH_GRAPH_USE_LINE_2) ? lineData2 : NULL;
+        drawInfo.LineColor1 = color1;
+        drawInfo.LineColor2 = color2;
+        drawInfo.LineBackColor1 = backColor1;
+        drawInfo.LineBackColor2 = backColor2;
+
+        // Compute this band's memory start row (bottom-up DIB).
+        LONG startRow = (LONG)height - (LONG)((s + 1) * bandHeight);
+        if (startRow < 0)
+            startRow = 0;
+
+        RGBQUAD* bandBits = bitsQuad + (startRow * width);
+
+        // Clamp band height so the last band does not overflow the bitmap.
+        LONG remaining = (LONG)height - startRow;
+        ULONG actualBandHeight = (remaining < (LONG)bandHeight) ? (ULONG)remaining : bandHeight;
+        drawInfo.Height = actualBandHeight;
+
+        PhDrawGraphDirect(hdc, bandBits, &drawInfo);
+    }
+
+    if (PhNfTransparencyEnabled)
+    {
+        PhBitmapSetAlpha(bits, width, height);
+    }
+
+    SelectBitmap(hdc, oldBitmap);
+    *NewIconOrBitmap = bitmap;
+    *Flags = PH_NF_UPDATE_IS_BITMAP;
+
+    _freea(lineData2);
+    _freea(lineData1);
+
+    // Tooltip: combine current values of the selected metrics.
+    PH_FORMAT format[24];
+    ULONG count = 0;
+
+    PhInitFormatS(&format[count++], L"Union history");
+
+    if (metricsMask & PH_TRAY_UNION_METRIC_CPU)
+    {
+        PhInitFormatC(&format[count++], '\n');
+        PhInitFormatS(&format[count++], L"CPU: ");
+        PhInitFormatF(&format[count++], (PhCpuKernelUsage + PhCpuUserUsage) * 100, PhMaxPrecisionUnit);
+        PhInitFormatC(&format[count++], '%');
+    }
+
+    if (metricsMask & PH_TRAY_UNION_METRIC_IO)
+    {
+        PhInitFormatC(&format[count++], '\n');
+        PhInitFormatS(&format[count++], L"I/O R+W: ");
+        PhInitFormatSize(&format[count++], PhIoReadDelta.Delta + PhIoWriteDelta.Delta + PhIoOtherDelta.Delta);
+    }
+
+    if (metricsMask & PH_TRAY_UNION_METRIC_COMMIT)
+    {
+        FLOAT commitFraction = (FLOAT)PhPerfInformation.CommittedPages / (FLOAT)PhPerfInformation.CommitLimit;
+        PhInitFormatC(&format[count++], '\n');
+        PhInitFormatS(&format[count++], L"Commit: ");
+        PhInitFormatF(&format[count++], commitFraction * 100, PhMaxPrecisionUnit);
+        PhInitFormatC(&format[count++], '%');
+    }
+
+    if (metricsMask & PH_TRAY_UNION_METRIC_PHYSICAL)
+    {
+        ULONG_PTR physicalUsage = PhSystemBasicInformation.NumberOfPhysicalPages - PhPerfInformation.AvailablePages;
+        FLOAT physicalFraction = (FLOAT)physicalUsage / (FLOAT)PhSystemBasicInformation.NumberOfPhysicalPages;
+        PhInitFormatC(&format[count++], '\n');
+        PhInitFormatS(&format[count++], L"Physical: ");
+        PhInitFormatF(&format[count++], physicalFraction * 100, PhMaxPrecisionUnit);
+        PhInitFormatC(&format[count++], '%');
+    }
+
+    *NewText = PhFormat(format, count, 0);
 }
 
 _Function_class_(PH_NF_ICON_UPDATE_CALLBACK)

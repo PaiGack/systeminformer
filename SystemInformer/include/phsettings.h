@@ -337,6 +337,7 @@ EXT ULONG PhCsProcessMonitorCacheLimit;
 #define SETTING_ICON_SINGLE_CLICK                                   L"IconSingleClick"
 #define SETTING_ICON_TOGGLES_VISIBILITY                             L"IconTogglesVisibility"
 #define SETTING_ICON_TRANSPARENCY_ENABLED                           L"IconTransparencyEnabled"
+#define SETTING_ICON_TRAY_UNION_METRICS                             L"IconTrayUnionMetrics"
 #define SETTING_INFORMATION_WINDOW_POSITION                         L"InformationWindowPosition"
 #define SETTING_INFORMATION_WINDOW_SIZE                             L"InformationWindowSize"
 #define SETTING_IMAGE_COHERENCY_SCAN_LEVEL                          L"ImageCoherencyScanLevel"

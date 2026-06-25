@@ -4042,6 +4042,62 @@ VOID PhMwpDispatchMenuCommand(
             return;
         }
         break;
+    case ID_TRAYICONS_UNION_METRIC_CPU:
+    case ID_TRAYICONS_UNION_METRIC_IO:
+    case ID_TRAYICONS_UNION_METRIC_COMMIT:
+    case ID_TRAYICONS_UNION_METRIC_PHYSICAL:
+        {
+            ULONG metricsMask;
+            ULONG toggleBit;
+
+            metricsMask = (ULONG)PhGetIntegerSetting(SETTING_ICON_TRAY_UNION_METRICS);
+
+            switch (ItemId)
+            {
+            case ID_TRAYICONS_UNION_METRIC_CPU:
+                toggleBit = PH_TRAY_UNION_METRIC_CPU;
+                break;
+            case ID_TRAYICONS_UNION_METRIC_IO:
+                toggleBit = PH_TRAY_UNION_METRIC_IO;
+                break;
+            case ID_TRAYICONS_UNION_METRIC_COMMIT:
+                toggleBit = PH_TRAY_UNION_METRIC_COMMIT;
+                break;
+            case ID_TRAYICONS_UNION_METRIC_PHYSICAL:
+                toggleBit = PH_TRAY_UNION_METRIC_PHYSICAL;
+                break;
+            default:
+                toggleBit = 0;
+                break;
+            }
+
+            metricsMask ^= toggleBit;
+
+            // Keep the union icon visibility in sync with the metric selection:
+            // hide it when no metric is selected (avoid an empty tray icon), and
+            // auto-show it when at least one metric gets selected.
+            {
+                PPH_NF_ICON unionIcon = PhNfGetIconById(PH_TRAY_ICON_ID_UNION_HISTORY);
+
+                if (unionIcon)
+                {
+                    if (metricsMask == 0)
+                    {
+                        if (unionIcon->Flags & PH_NF_ICON_ENABLED)
+                            PhNfSetVisibleIcon(unionIcon, FALSE);
+                    }
+                    else
+                    {
+                        if (!(unionIcon->Flags & PH_NF_ICON_ENABLED))
+                            PhNfSetVisibleIcon(unionIcon, TRUE);
+                    }
+                }
+            }
+
+            PhSetIntegerSetting(SETTING_ICON_TRAY_UNION_METRICS, metricsMask);
+            PhNfSaveSettings();
+        }
+        return;
     case ID_USER_CONNECT:
     case ID_USER_DISCONNECT:
     case ID_USER_LOGOFF:
@@ -4495,6 +4551,41 @@ VOID PhMwpInitializeSubMenu(
                     newText = PhaConcatStrings2(icon->Text, L" (Unavailable)");
                     PhModifyEMenuItem(menuItem, PH_EMENU_MODIFY_TEXT, PH_EMENU_TEXT_OWNED,
                         PhAllocateCopy(newText->Buffer, newText->Length + sizeof(WCHAR)), NULL);
+                }
+
+                // The union history icon gets a "Select metrics" submenu allowing the
+                // user to choose which curves are combined into the single icon.
+                if (icon->SubId == PH_TRAY_ICON_ID_UNION_HISTORY)
+                {
+                    PPH_EMENU_ITEM metricsMenu;
+                    PPH_EMENU_ITEM metricItem;
+                    ULONG metricsMask;
+
+                    metricsMask = (ULONG)PhGetIntegerSetting(SETTING_ICON_TRAY_UNION_METRICS);
+
+                    metricsMenu = PhCreateEMenuItem(0, 0, L"Select metrics", NULL, NULL);
+
+                    metricItem = PhCreateEMenuItem(0, ID_TRAYICONS_UNION_METRIC_CPU, L"CPU", NULL, NULL);
+                    if (metricsMask & PH_TRAY_UNION_METRIC_CPU)
+                        metricItem->Flags |= PH_EMENU_CHECKED;
+                    PhInsertEMenuItem(metricsMenu, metricItem, ULONG_MAX);
+
+                    metricItem = PhCreateEMenuItem(0, ID_TRAYICONS_UNION_METRIC_IO, L"I/O", NULL, NULL);
+                    if (metricsMask & PH_TRAY_UNION_METRIC_IO)
+                        metricItem->Flags |= PH_EMENU_CHECKED;
+                    PhInsertEMenuItem(metricsMenu, metricItem, ULONG_MAX);
+
+                    metricItem = PhCreateEMenuItem(0, ID_TRAYICONS_UNION_METRIC_COMMIT, L"Commit", NULL, NULL);
+                    if (metricsMask & PH_TRAY_UNION_METRIC_COMMIT)
+                        metricItem->Flags |= PH_EMENU_CHECKED;
+                    PhInsertEMenuItem(metricsMenu, metricItem, ULONG_MAX);
+
+                    metricItem = PhCreateEMenuItem(0, ID_TRAYICONS_UNION_METRIC_PHYSICAL, L"Physical", NULL, NULL);
+                    if (metricsMask & PH_TRAY_UNION_METRIC_PHYSICAL)
+                        metricItem->Flags |= PH_EMENU_CHECKED;
+                    PhInsertEMenuItem(metricsMenu, metricItem, ULONG_MAX);
+
+                    PhInsertEMenuItem(menuItem, metricsMenu, ULONG_MAX);
                 }
             }
         }
