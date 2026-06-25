@@ -61,6 +61,15 @@ jobs:
       working-directory: ${{github.workspace}}
       run: build\build_debug.cmd
 
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-debug-bin
+        path: |
+          */bin/**
+          */*/bin/**
+        if-no-files-found: error
+
   build-release:
     permissions:
       contents: read
@@ -113,6 +122,15 @@ jobs:
       working-directory: ${{github.workspace}}
       run: build\build_release.cmd
 
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-release-bin
+        path: |
+          */bin/**
+          */*/bin/**
+        if-no-files-found: error
+
   build-driver:
     permissions:
       contents: read
@@ -157,6 +175,15 @@ jobs:
       working-directory: ${{github.workspace}}
       run: build\build_zdriver.cmd prefast
 
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-driver-bin
+        path: |
+          */bin/**
+          */*/bin/**
+        if-no-files-found: error
+
   build-driver-release:
     permissions:
       contents: read
@@ -200,3 +227,12 @@ jobs:
       shell: cmd
       working-directory: ${{github.workspace}}
       run: build\build_zdriver.cmd release
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-driver-release-bin
+        path: |
+          */bin/**
+          */*/bin/**
+        if-no-files-found: error
