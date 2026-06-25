@@ -66,8 +66,10 @@ jobs:
       with:
         name: build-debug-bin
         path: |
+          bin/**
           */bin/**
           */*/bin/**
+          **/bin/**
         if-no-files-found: error
 
   build-release:
@@ -127,8 +129,10 @@ jobs:
       with:
         name: build-release-bin
         path: |
+          bin/**
           */bin/**
           */*/bin/**
+          **/bin/**
         if-no-files-found: error
 
   build-driver:
@@ -180,8 +184,10 @@ jobs:
       with:
         name: build-driver-bin
         path: |
+          bin/**
           */bin/**
           */*/bin/**
+          **/bin/**
         if-no-files-found: error
 
   build-driver-release:
@@ -233,6 +239,8 @@ jobs:
       with:
         name: build-driver-release-bin
         path: |
+          bin/**
           */bin/**
           */*/bin/**
+          **/bin/**
         if-no-files-found: error
